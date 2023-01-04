@@ -1,0 +1,442 @@
+#=========== Import ===========#
+
+import pygame,random,os
+
+#=========== 基本參數 ===========#
+
+Game_Name="太空生存戰"
+FPS=60                  #畫面更新率
+WIDTH,HIGHT=500,600     #視窗長寬
+Stone_Number=8          #障礙物數量
+Max_Health=100          #最大血量
+Max_Lives=3             #最大生命數
+Drop_Chance=0.05        #掉落物機率
+End_Cooldown=1500       #作用:避免誤按而繼續
+
+score=0                 #分數
+best_score=0            #最高得分
+game_times=0            #遊戲進行次數
+running=True            #運行狀態
+
+#=========== 顏色代碼 ===========#
+
+WHITE=(255,255,255)
+BLACK=(0,0,0)
+RED=(255,0,0)
+GREEN=(0,255,0)
+BLUE=(0,0,255)
+
+#=========== 初始化&創建視窗 ===========#
+
+pygame.init()
+pygame.mixer.init()                                                             #音樂&音效初始化
+screen=pygame.display.set_mode((WIDTH,HIGHT))
+pygame.display.set_caption(Game_Name)                                           #更改視窗標題
+pygame.display.set_icon(pygame.image.load(os.path.join("resource","icon","icon.png")))     #更改標題圖示
+clock=pygame.time.Clock()
+
+#=========== 載入圖片 ===========#
+
+background_img=pygame.image.load(os.path.join("resource","image","background.png")).convert()
+
+player_img=pygame.image.load(os.path.join("resource","image","player.png")).convert()
+heart_img=pygame.image.load(os.path.join("resource","image","heart.png")).convert()
+heart_img=pygame.transform.scale(heart_img,(30,30))
+heart_img.set_colorkey(BLACK)
+bullet_img=pygame.image.load(os.path.join("resource","image","bullet.png")).convert()
+
+#石頭外觀
+stone_img=[]
+for i in range(7):
+    stone_img.append(pygame.image.load(os.path.join("resource","image",f"stone{i}.png")).convert())
+
+#爆炸動畫
+explostion_animation={}
+explostion_animation["large"]=[]
+explostion_animation["small"]=[]
+explostion_animation["player"]=[]
+for i in range(9):
+    explostion_img=pygame.image.load(os.path.join("resource","image",f"expl{i}.png")).convert()
+    explostion_img.set_colorkey(BLACK)
+    explostion_animation["large"].append(pygame.transform.scale(explostion_img,(75,75)))
+    explostion_animation["small"].append(pygame.transform.scale(explostion_img,(30,30)))
+    player_explostion_img=pygame.image.load(os.path.join("resource","image",f"player_expl{i}.png")).convert()
+    player_explostion_img.set_colorkey(BLACK)
+    explostion_animation["player"].append(player_explostion_img)
+
+#掉落物
+drop_imgs={}
+drop_imgs["shield"]=pygame.image.load(os.path.join("resource","image","shield.png")).convert()
+drop_imgs["gun"]=pygame.image.load(os.path.join("resource","image","gun.png")).convert()
+
+#=========== 載入文字 ===========#
+
+font_namme=os.path.join("resource","font","font.ttf") 
+def draw_text(surface,text,size,x,y):
+    front=pygame.font.Font(font_namme,size)
+    text_surface=front.render(text,True,WHITE)
+    text_rect=text_surface.get_rect()
+    text_rect.centerx=x
+    text_rect.top=y
+    surface.blit(text_surface,text_rect)
+
+#=========== 載入音效 ===========#
+
+shoot_sound=pygame.mixer.Sound(os.path.join("resource","sound","shoot.wav"))
+player_die_sound=pygame.mixer.Sound(os.path.join("resource","sound","rumble.mp3"))
+pygame.mixer.Sound.set_volume(shoot_sound,0.3)
+pygame.mixer.Sound.set_volume(player_die_sound,0.3)
+
+explosion_sounds=[]
+for i in range(2):
+    explosion_sounds.append(pygame.mixer.Sound(os.path.join("resource","sound",f"expl{i}.wav")))
+    pygame.mixer.Sound.set_volume(explosion_sounds[i],0.3)
+
+#background music
+pygame.mixer.music.load(os.path.join("resource","sound","background.mp3"))
+pygame.mixer.music.play(-1) #「-1」表無限重播
+pygame.mixer.music.set_volume(0.3)
+
+#=========== 物件建立 ===========#
+
+#玩家
+class Player(pygame.sprite.Sprite):
+    def __init__(self):
+        pygame.sprite.Sprite.__init__(self)
+        self.image=pygame.transform.scale(player_img,(50,38))
+        self.image.set_colorkey(BLACK)
+        self.rect=self.image.get_rect() #圖像定位
+        self.rect.x=WIDTH/2
+        self.rect.y=HIGHT-15
+        self.rect.centerx=WIDTH/2
+        self.rect.bottom=HIGHT-15
+
+        self.health=Max_Health          #血量
+        self.lives=Max_Lives            #生命數
+        self.hidden=False               #隱形狀態
+        self.hide_time=0                #隱形時間
+        self.gun=1
+        self.gun_time=0
+
+        self.speedx=10
+        self.speedy=10
+        self.radius=20
+
+    def shoot(self):
+        if self.hidden==False:
+            if self.gun==1:
+                bullet=Bullet(self.rect.centerx,self.rect.top)
+                all_sprites.add(bullet)
+                bullets.add(bullet)
+                shoot_sound.play()
+            if self.gun==2:
+                bullet1=Bullet(self.rect.left,self.rect.centery)
+                bullet2=Bullet(self.rect.right,self.rect.centery)
+                all_sprites.add(bullet1,bullet2)
+                bullets.add(bullet1,bullet2)
+                shoot_sound.play()
+            if self.gun>=3:
+                bullet=Bullet(self.rect.centerx,self.rect.top)
+                bullet1=Bullet(self.rect.left,self.rect.centery)
+                bullet2=Bullet(self.rect.right,self.rect.centery)
+                all_sprites.add(bullet,bullet1,bullet2)
+                bullets.add(bullet,bullet1,bullet2)
+                shoot_sound.play()
+
+    def update(self):
+        now=pygame.time.get_ticks()
+
+        if self.hidden and now-self.hide_time>=1000:
+            self.hidden=False
+           
+            self.rect.centerx=WIDTH/2
+            self.rect.bottom=HIGHT-15
+
+        #玩家移動
+        if self.hidden==False:
+            key_pressed=pygame.key.get_pressed()
+            if key_pressed[pygame.K_RIGHT] or key_pressed[pygame.K_d]:
+                self.rect.x+=self.speedx
+            if key_pressed[pygame.K_LEFT] or key_pressed[pygame.K_a]:
+                self.rect.x-=self.speedx
+            if key_pressed[pygame.K_UP] or key_pressed[pygame.K_w]:
+                self.rect.y-=self.speedy
+            if key_pressed[pygame.K_DOWN] or key_pressed[pygame.K_s]:
+                self.rect.y+=self.speedy
+
+        #移動範圍限制
+            if self.rect.right>WIDTH:
+                self.rect.right=WIDTH
+            if self.rect.left<0:
+                self.rect.left=0  
+            if self.rect.y<HIGHT-HIGHT*2/3:
+                self.rect.y=HIGHT-HIGHT*2/3
+            if  self.rect.y>HIGHT-40:
+                self.rect.y=HIGHT-40
+
+        #子彈增強時限
+            if  self.gun>1 and now-self.gun_time > 5000:
+                self.gun-=1
+                self.gun_time=now
+            
+    def hide(self):
+        self.hidden=True
+        self.hide_time=pygame.time.get_ticks()
+        self.rect.center=(WIDTH/2,HIGHT+500)
+
+    def gunup(self):
+        self.gun+=1
+        self.gun_time=pygame.time.get_ticks()
+
+#石頭
+class Stone(pygame.sprite.Sprite):
+    def __init__(self):
+        pygame.sprite.Sprite.__init__(self)
+        self.image_ori=random.choice(stone_img)
+        self.image_ori.set_colorkey(BLACK)
+        self.image=self.image_ori.copy()
+        self.rect=self.image.get_rect()
+        self.rect.x=random.randrange(0,WIDTH-self.rect.width)
+        self.rect.y=random.randrange(-240,-180)
+
+        self.speedy=random.randrange(2,8)
+        self.speedx=random.randrange(-3,3)
+        self.radius=self.rect.width/2*0.8
+
+        self.total_degree=0
+        self.rotate_degree=random.randrange(-5,5)
+
+    def rotate(self):
+        self.total_degree+=self.rotate_degree
+        self.total_degree=self.total_degree%360
+        self.image=pygame.transform.rotate(self.image_ori,self.total_degree)
+
+        center=self.rect.center
+        self.rect=self.image.get_rect()
+        self.rect.center=center
+
+    def update(self):
+        self.rotate()
+        self.rect.y+=self.speedy
+        self.rect.x+=self.speedx
+        if self.rect.top>HIGHT or self.rect.x>WIDTH or self.rect.x<-self.rect.width:
+            self.rect.x=random.randrange(0,WIDTH-self.rect.width)
+            self.rect.y=random.randrange(-200,-50)
+            self.speedy=random.randrange(2,8)
+            self.speedx=random.randrange(-3,3)
+            
+#子彈
+class Bullet(pygame.sprite.Sprite):
+    def __init__(self,x,y):
+        pygame.sprite.Sprite.__init__(self)
+        self.image=bullet_img 
+        self.image.set_colorkey(BLACK)
+        self.rect=self.image.get_rect()
+        self.rect.centerx=x
+        self.rect.bottom=y
+        self.speedy=-10
+        
+    def update(self):
+        self.rect.y+=self.speedy
+        if self.rect.bottom<0:
+            self.kill()
+
+#爆炸
+class Explosion(pygame.sprite.Sprite):
+    def __init__(self,center,size):
+        pygame.sprite.Sprite.__init__(self)
+        self.size=size
+        self.image=explostion_animation[self.size][0]
+        self.rect=self.image.get_rect()
+        self.rect.center=center
+        self.frame=0
+        self.last_update=pygame.time.get_ticks()    #作用:避免動畫更新過快
+        self.frame_rate=20                          #圖片更新間隔(毫秒)
+
+    def update(self):
+        now=pygame.time.get_ticks()
+        if now-self.last_update>self.frame_rate:
+            self.last_update=now
+            self.frame+=1
+            if self.frame==len(explostion_animation[self.size]):
+                self.kill()
+            else:
+                self.image=explostion_animation[self.size][self.frame]
+                center=self.rect.center
+                self.rect=self.image.get_rect()
+                self.rect.center=center
+        
+#掉落物
+class Drop(pygame.sprite.Sprite):
+    def __init__(self,center):
+        pygame.sprite.Sprite.__init__(self)
+        self.type=random.choice(["shield","gun"])
+        self.image=drop_imgs[self.type]
+        self.image.set_colorkey(BLACK)
+        self.rect=self.image.get_rect()
+        self.rect.center=center
+        self.speedy=3
+        
+    def update(self):
+        self.rect.y+=self.speedy
+        if self.rect.top>HIGHT:
+            self.kill()
+
+all_sprites=pygame.sprite.Group()
+stones=pygame.sprite.Group()
+bullets=pygame.sprite.Group()
+drops=pygame.sprite.Group()
+player=Player()
+all_sprites.add(player)
+
+#=========== Other ===========#
+
+#新增石頭
+def stone_reborn():
+        stone=Stone()
+        all_sprites.add(stone)
+        stones.add(stone)
+for i in range(Stone_Number):
+    stone_reborn()
+
+#觸發爆炸動畫
+def explosion(center,size):
+    explostion=Explosion(center,size)
+    all_sprites.add(explostion)
+
+#繪製血條
+def draw_health(surface,health,x,y):
+    if health<0:
+        health=0
+
+    BAR_LENGTH=200
+    BAR_HIGH=20
+
+    fill=(health/100)*BAR_LENGTH
+    outline_rect=pygame.Rect(x,y,BAR_LENGTH,BAR_HIGH)
+    fill_rect=pygame.Rect(x,y,fill,BAR_HIGH)
+    pygame.draw.rect(surface,GREEN,fill_rect)
+    pygame.draw.rect(surface,WHITE,outline_rect,2)
+
+#繪製生命數提示
+def draw_lives(surface,lives,img,x,y):
+    for i in range(lives):
+        img_rect=img.get_rect()
+        img_rect.x=x-40*i
+        img_rect.y=y
+        surface.blit(img,img_rect)
+
+#初始畫面
+def draw_init():
+    end_time=pygame.time.get_ticks()
+
+    screen.blit(background_img,(0,0))
+    draw_text(screen,Game_Name,64,WIDTH/2,HIGHT/4)
+    draw_text(screen,"移動：WASD / 方向鍵  射擊：空白鍵",22,WIDTH/2,HIGHT/2)
+    draw_text(screen,"任意鍵開始遊戲",22,WIDTH/2,HIGHT/4*3)
+    if best_score>0:
+        draw_text(screen,f"最高得分：{best_score}",18,WIDTH/4,HIGHT/20)
+    if game_times>0:
+        draw_text(screen,f"遊玩次數：{game_times}",18,WIDTH/4,HIGHT/10)
+
+    pygame.display.update()
+    waiting=True
+    while waiting:
+        clock.tick(FPS)
+        for event in pygame.event.get():
+            if event.type==pygame.QUIT:
+                pygame.quit()
+                return True
+            elif event.type==pygame.KEYUP:
+                if game_times==0 or pygame.time.get_ticks()-end_time>=End_Cooldown:
+                    waiting=False
+                return False
+
+#=========== Game Loop ===========#
+
+show_init=True  #顯示初始畫面
+
+while running:
+    if show_init:
+        close=draw_init()
+        if close:
+            break
+        show_init=False
+    
+    clock.tick(FPS) #一秒內限制之執行次數=fps
+    #Get Input
+    for event in pygame.event.get():
+        if event.type==pygame.QUIT:
+            running=False
+        elif event.type==pygame.KEYDOWN:
+            if event.key==pygame.K_SPACE:
+                player.shoot()
+                
+    #遊戲更新
+    all_sprites.update()
+    hits=pygame.sprite.groupcollide(stones,bullets,True,True)
+    for hit in hits:
+        stone_reborn()
+        random.choice(explosion_sounds).play()
+        explosion(hit.rect.center,"large")
+        if hit.radius<5:
+            score+=5
+        else:
+            score+=int((int(hit.radius)/5))*5
+
+        #生成掉落物
+        if random.random() > 1-Drop_Chance and player.hidden==False:
+            drop=Drop(hit.rect.center)
+            all_sprites.add(drop)
+            drops.add(drop)
+
+    hits=pygame.sprite.spritecollide(player,drops,True)
+    for hit in hits:
+        if hit.type=="shield":
+            player.health+=20
+            if player.health>100:
+                player.health=100
+        elif hit.type=="gun":
+            player.gunup()
+
+    hits=pygame.sprite.spritecollide(player,stones,True,pygame.sprite.collide_circle)
+    for hit in hits:
+        stone_reborn()
+        player.health-=int(hit.radius)
+        explosion(hit.rect.center,"small")
+        if player.health<=0:
+            die_explosion=Explosion(player.rect.center,"player")
+            all_sprites.add(die_explosion)
+            player_die_sound.play()
+            player.lives-=1
+            player.health=100
+            player.gun=1
+            player.hide()
+
+    if player.lives==0 and not(die_explosion.alive()):
+            show_init=True
+            game_times+=1
+            if best_score<score:
+                best_score=score
+
+            #重設
+            score=0
+            all_sprites=pygame.sprite.Group()
+            stones=pygame.sprite.Group()
+            bullets=pygame.sprite.Group()
+            drops=pygame.sprite.Group()
+            player=Player()
+            all_sprites.add(player)
+            for i in range(Stone_Number):
+                stone_reborn()
+            
+    #show display
+    screen.blit(background_img,(0,0))
+    all_sprites.draw(screen)
+    draw_text(screen,str(score),32,WIDTH-200,20)
+    draw_health(screen,player.health,10,33)
+    draw_text(screen,str(player.health),18,30,30)
+    draw_lives(screen,player.lives,heart_img,WIDTH-50,33)
+    pygame.display.update()
+
+pygame.QUIT #結束
