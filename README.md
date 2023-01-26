@@ -5,8 +5,10 @@
 # 程式碼
 [code package.zip](https://github.com/skyxwind/Python-Pygame-Learning/files/10509453/code.package.zip)
 
-下載並解壓縮，可看見一個資料夾與 Python 檔，
+下載並解壓縮，可看見一個資料夾與 Python 檔
+
 「resource」 : 存放遊戲之素材
+
 「main.py」 : 遊戲之程式碼
 # 遊戲執行檔
 [exe package.zip](https://github.com/skyxwind/Python-Pygame-Learning/files/10509469/exe.package.zip)
