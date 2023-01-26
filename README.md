@@ -5,7 +5,7 @@
 # 程式碼
 [code package.zip](https://github.com/skyxwind/Python-Pygame-Learning/files/10509453/code.package.zip)
 
-下載並解壓縮，可看見一個資料夾與 Python 檔
+壓縮檔包含一個資料夾與一個 Python 檔
 
 「resource」 : 存放遊戲之素材
 
